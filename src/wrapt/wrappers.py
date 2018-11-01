@@ -678,8 +678,62 @@ class FunctionWrapper(_FunctionWrapperBase):
 
 # noinspection PyPep8Naming
 def ClassProxy(wrapped):
+    class ClassProxyMeta(type):
+        def __setattr__(cls, name, value):
+            if name.startswith('_self_'):
+                type.__setattr__(cls, name, value)
+
+            elif name == '__wrapped_class__':
+                type.__setattr__(cls, name, value)
+                try:
+                    type.__delattr__(cls, '__qualname__')
+                except AttributeError:
+                    pass
+                try:
+                    type.__setattr__(cls, '__qualname__', value.__qualname__)
+                except AttributeError:
+                    pass
+
+            elif name == '__qualname__':
+                setattr(cls.__wrapped_class__, name, value)
+                type.__setattr__(cls, name, value)
+
+            elif hasattr(cls, name):
+                type.__setattr__(cls, name, value)
+
+            else:
+                setattr(cls.__wrapped_class__, name, value)
+
+        def __getattr__(cls, name):
+            # If we are being to lookup '__wrapped__' then the
+            # '__init__()' method cannot have been called.
+
+            if name in ['__wrapped_class__']:
+                raise ValueError('__wrapper_class__ has not been initialised')
+
+            return getattr(cls.__wrapped_class__, name)
+
+        def __delattr__(cls, name):
+            if name.startswith('_self_'):
+                type.__delattr__(cls, name)
+
+            elif name == '__wrapped_class__':
+                raise TypeError('__wrapped_class__ must be an type')
+
+            elif name == '__qualname__':
+                type.__delattr__(cls, name)
+                delattr(cls.__wrapped_class__, name)
+
+            elif hasattr(type(cls), name):
+                type.__delattr__(cls, name)
+
+            else:
+                delattr(cls.__wrapped__, name)
+
     # noinspection PyShadowingNames
-    class ClassProxy(CallableObjectProxy):
+    class ClassProxy(CallableObjectProxy, metaclass=ClassProxyMeta):
+        __wrapped_class__ = wrapped
+
         def __init__(self, *args, **kwargs):
             super().__init__(wrapped=wrapped)
             self.__wrapped__ = wrapped(*args, **kwargs)
